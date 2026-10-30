@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Koppelingstest MailBlue</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --blauw: #001D3D; --groen: #1ED760; --grijs: #5b6b80; --rand: #dfe5ec; --vlak: #f3f6f9; --rood: #c62828; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Poppins, system-ui, sans-serif; color: var(--blauw); background: #fff; }
+    main { max-width: 560px; margin: 0 auto; padding: 48px 16px 64px; }
+    h1 { font-size: 32px; font-weight: 700; margin: 0 0 8px; }
+    .sub { color: var(--grijs); font-weight: 300; margin: 0 0 32px; line-height: 1.5; }
+    label { display: block; font-weight: 600; margin: 20px 0 8px; }
+    input { width: 100%; padding: 14px 16px; font: inherit; border: 1px solid var(--rand); border-radius: 10px; }
+    input:focus { outline: 2px solid var(--groen); border-color: transparent; }
+    .scores { background: var(--vlak); border: 1px solid var(--rand); border-radius: 12px; padding: 16px 20px; margin: 28px 0; }
+    .rij { display: flex; justify-content: space-between; padding: 6px 0; }
+    .totaal { border-top: 1px solid var(--rand); margin-top: 8px; padding-top: 12px; font-weight: 700; }
+    button { width: 100%; padding: 16px; font: inherit; font-weight: 600; color: var(--blauw); background: var(--groen); border: 0; border-radius: 10px; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: wait; }
+    .status { margin-top: 24px; padding: 16px 20px; border-radius: 12px; border: 1px solid; display: none; line-height: 1.5; }
+    .status.goed { display: block; border-color: var(--groen); background: #e9fbef; }
+    .status.fout { display: block; border-color: var(--rood); background: #fdeeee; }
+    .status strong { display: block; margin-bottom: 4px; }
+    .status code { font-size: 13px; white-space: pre-wrap; word-break: break-word; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Koppelingstest MailBlue</h1>
+  <p class="sub">Test of de Video Marketing Scan vanaf Netlify gegevens naar MailBlue kan sturen.</p>
+
+  <form id="form" novalidate>
+    <label for="voornaam">Voornaam</label>
+    <input id="voornaam" name="voornaam" autocomplete="given-name" required>
+
+    <label for="email">E-mailadres</label>
+    <input id="email" name="email" type="email" autocomplete="email" required>
+
+    <label for="bedrijfsnaam">Bedrijfsnaam</label>
+    <input id="bedrijfsnaam" name="bedrijfsnaam" autocomplete="organization" required>
+
+    <div class="scores" aria-label="Vaste testscores">
+      <div class="rij"><span>Blok 1 Verhaal</span><span>3</span></div>
+      <div class="rij"><span>Blok 2 Doelgroep</span><span>2</span></div>
+      <div class="rij"><span>Blok 3 Identiteit</span><span>3</span></div>
+      <div class="rij"><span>Blok 4 Landing</span><span>2</span></div>
+      <div class="rij totaal"><span>Totaalscore</span><span>10</span></div>
+    </div>
+
+    <button id="knop" type="submit">Verstuur testscan</button>
+  </form>
+
+  <div id="status" class="status" role="status" aria-live="polite"></div>
+</main>
+
+<script>
+  const form = document.getElementById("form");
+  const knop = document.getElementById("knop");
+  const status = document.getElementById("status");
+
+  function toon(type, titel, tekst) {
+    status.className = "status " + type;
+    status.innerHTML = "";
+    const t = document.createElement("strong");
+    t.textContent = titel;
+    status.appendChild(t);
+    if (tekst) {
+      const c = document.createElement("code");
+      c.textContent = tekst;
+      status.appendChild(c);
+    }
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(form));
+    if (!data.voornaam.trim() || !data.email.trim() || !data.bedrijfsnaam.trim()) {
+      toon("fout", "Vul alle drie de velden in.");
+      return;
+    }
+    knop.disabled = true;
+    knop.textContent = "Bezig met versturen";
+    try {
+      const res = await fetch("/.netlify/functions/mailblue-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      const json = await res.json().catch(() => ({ success: false, status: res.status, stap: "onbekend", fout: "Geen leesbaar antwoord van de functie." }));
+      if (json.success) {
+        const extra = json.tagBestondAl ? " De tag stond er al op, ook dat werkt." : "";
+        toon("goed", "Gelukt. Contact staat in MailBlue met ID " + json.contactId + "." + extra);
+      } else {
+        toon("fout", "Niet gelukt", "HTTP status: " + json.status + " (" + json.stap + ")\n" + json.fout);
+      }
+    } catch (err) {
+      toon("fout", "Niet gelukt", "De functie is niet bereikbaar. Staat de site via GitHub op Netlify?\n" + err);
+    } finally {
+      knop.disabled = false;
+      knop.textContent = "Verstuur testscan";
+    }
+  });
+</script>
+</body>
+</html>
