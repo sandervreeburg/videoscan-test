@@ -22,7 +22,45 @@ function antwoord(status, body) {
 
 function basisUrl(ruw) {
   // Vergeeft een schuine streep of /api/3 aan het eind.
-  return ruw.trim().replace(/\/+$/, "").replace(/\/api\/3$/, "");
+  return schoon(ruw).replace(/\/+$/, "").replace(/\/api\/3$/, "");
+}
+
+function schoon(waarde) {
+  // Haalt spaties, regeleindes en aanhalingstekens rond een waarde weg.
+  return String(waarde).trim().replace(/^["']+|["']+$/g, "").trim();
+}
+
+// Controleert of MailBlue de sleutel accepteert, en geeft bij een fout
+// alleen kenmerken terug (nooit de sleutel zelf).
+async function controleerSleutel(ruweUrl, ruweSleutel) {
+  const sleutel = schoon(ruweSleutel);
+  const basis = basisUrl(ruweUrl);
+  const kenmerken = {
+    host: (() => { try { return new URL(basis).host; } catch { return "ongeldig adres"; } })(),
+    adresBegintMetHttps: basis.startsWith("https://"),
+    sleutelLengte: sleutel.length,
+    sleutelHadSpatiesOfQuotes: sleutel !== String(ruweSleutel),
+  };
+  let res;
+  try {
+    res = await fetch(`${basis}/api/3/users/me`, {
+      headers: { "Api-Token": sleutel, Accept: "application/json" },
+      redirect: "manual",
+    });
+  } catch (e) {
+    return { ok: false, status: 0, kenmerken, fout: `Adres niet bereikbaar: ${e.message}` };
+  }
+  if (res.status >= 300 && res.status < 400) {
+    const naar = res.headers.get("location") || "onbekend";
+    let naarHost = naar;
+    try { naarHost = new URL(naar, basis).host; } catch {}
+    return { ok: false, status: res.status, kenmerken, fout: `Het adres stuurt door naar ${naarHost}. Gebruik dat adres als MAILBLUE_API_URL.` };
+  }
+  if (!res.ok) {
+    const tekst = (await res.text()).slice(0, 300);
+    return { ok: false, status: res.status, kenmerken, fout: tekst };
+  }
+  return { ok: true, sleutel, basis };
 }
 
 export default async (req) => {
@@ -58,9 +96,19 @@ export default async (req) => {
     return antwoord(400, { success: false, stap: "invoer", status: 400, fout: "Voornaam, e-mailadres en bedrijfsnaam zijn verplicht." });
   }
 
+  // Stap 0: eerst controleren of MailBlue de sleutel accepteert.
+  const check = await controleerSleutel(ruweUrl, sleutel);
+  if (!check.ok) {
+    const k = check.kenmerken;
+    const uitleg =
+      `${check.fout}\n\nAdres: ${k.host} (https: ${k.adresBegintMetHttps ? "ja" : "nee"})` +
+      `\nSleutel: ${k.sleutelLengte} tekens, spaties of quotes eromheen: ${k.sleutelHadSpatiesOfQuotes ? "ja" : "nee"}`;
+    return antwoord(502, { success: false, stap: "sleutelcheck", status: check.status, fout: uitleg });
+  }
+
   const totaal = Object.values(TESTSCORES).reduce((a, b) => a + b, 0);
-  const basis = basisUrl(ruweUrl);
-  const headers = { "Api-Token": sleutel, "Content-Type": "application/json", Accept: "application/json" };
+  const basis = check.basis;
+  const headers = { "Api-Token": check.sleutel, "Content-Type": "application/json", Accept: "application/json" };
 
   // Stap 1: contact aanmaken of bijwerken, met velden.
   const syncRes = await fetch(`${basis}/api/3/contact/sync`, {
